@@ -123,7 +123,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Xcode Log
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: PetLingoKids-XcodeLog
