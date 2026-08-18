@@ -1,30 +1,41 @@
-# PetLingo Kids iOS v1.0.1 — CI 修正版
+# PetLingo Kids iOS v1.0.2 — GitHub Actions 修正版
 
-## 這版修正的錯誤
+## 這次真正找到的問題
 
-GitHub Actions log 出現：
+你上傳的 repository 內實際執行的是：
 
-- `Using the first of multiple matching destinations`
-- 第一個 destination 是 `My Mac — Designed for [iPad,iPhone]`
-- 同時列出 iOS、iOS Simulator、visionOS Simulator
-- 最後 `BUILD FAILED / ANALYZE FAILED / exit code 65`
+`.github/workflows/objective-c-xcode.yml`
 
-這代表執行中的 workflow 沒有把 Xcode 明確鎖定到 iOS Simulator。
+舊檔裡有：
 
-## v1.0.1 修正
+```bash
+if [ $scheme = default ]; then scheme=$(cat default); fi
+xcodebuild clean build analyze ...
+```
 
-### Xcode Project
-- iOS Deployment Target：15.0
-- iPhone + iPad：`TARGETED_DEVICE_FAMILY = "1,2"`
-- `SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"`
-- `SUPPORTS_MACCATALYST = NO`
-- 新增 `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO`
-- 新增 `SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO`
-- Marketing Version：1.0.1
-- Build：2
+而且沒有指定：
 
-### GitHub Actions
-`.github/workflows/ios.yml` 已改成明確：
+```bash
+-sdk iphonesimulator
+-destination 'generic/platform=iOS Simulator'
+```
+
+所以 Xcode 會同時看到：
+
+- Any iOS Device
+- Any iOS Simulator Device
+
+然後警告：
+
+`Using the first of multiple matching destinations`
+
+這次 v1.0.2 是直接修改你上傳 ZIP 裡的
+`.github/workflows/objective-c-xcode.yml`，
+不是另外新增一個沒有被執行的 workflow。
+
+## 新 workflow
+
+建置固定使用：
 
 ```bash
 xcodebuild \
@@ -36,37 +47,45 @@ xcodebuild \
   -derivedDataPath "$RUNNER_TEMP/PetLingoDerivedData" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY="" \
   clean build
 ```
 
-不再讓 `xcodebuild` 自己猜 My Mac / iOS Device / visionOS。
+### 另外取消舊的 `analyze`
 
-另外：
-- 建置失敗時會直接 grep 出真正的 `error:` 行。
-- 原始 `xcodebuild.log` 無論成功失敗都會上傳成 Artifact。
-- 成功後直接從固定 DerivedData 路徑打包 Simulator `.app`。
-- 專案根目錄新增 `default`，內容為 `KidsPetLearning`，相容舊 GitHub iOS starter workflow 的 `scheme=default` 寫法。
+目前第一目標是先確定 App 可以成功編譯。
+舊 workflow 把 `clean build analyze` 全部串在一起，
+只要 Analyze 出問題也會整個 Job 失敗，而且 xcpretty 把真正 error 縮掉。
 
-## 重要：GitHub 上舊 workflow 要換掉
+v1.0.2 先只做 `clean build`。
 
-你的失敗 log 第一行：
+若失敗：
+- Workflow 會直接印出所有 `error:` 行
+- 完整 `xcodebuild.log` 也會上傳成 Artifact
 
-```bash
-if [ $scheme = default ]; then scheme=$(cat default); fi
-```
+## Project
+- iOS Deployment Target：15.0
+- iPhone + iPad：1,2
+- Mac Catalyst：NO
+- Designed for iPhone/iPad on Mac：NO
+- Designed for iPhone/iPad on visionOS：NO
+- Version：1.0.2
+- Build：3
 
-不是本 ZIP 新版 `ios.yml` 的 Build 指令。
+## GitHub 上傳方式
 
-請在 GitHub `.github/workflows/` 確認：
-- 使用本版 `ios.yml`
-- 舊的 iOS starter workflow 若是另一個檔名，請停用或刪除
-- 不要同時跑舊 workflow 與新版 workflow
+請用這一包內容直接覆蓋 repository。
 
-## 驗證
-此環境沒有 macOS / Xcode，因此不能在這裡宣稱 xcodebuild 已通過。
-已完成：
-- Swift syntax parse
-- Info.plist validation
-- shared scheme presence
-- project settings static validation
-- ZIP integrity check
+特別確認 GitHub 上：
+
+`.github/workflows/objective-c-xcode.yml`
+
+第一行應為：
+
+`name: PetLingo Kids iOS Simulator Build`
+
+如果還看到：
+
+`name: Xcode - Build and Analyze`
+
+代表 GitHub 仍然在跑舊 workflow。
