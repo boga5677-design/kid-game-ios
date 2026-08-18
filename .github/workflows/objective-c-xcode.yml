@@ -1,30 +1,131 @@
-name: Xcode - Build and Analyze
+name: PetLingo Kids iOS Simulator Build
 
 on:
+  workflow_dispatch:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Build and analyse default scheme using xcodebuild command
-    runs-on: macos-latest
+    name: Build KidsPetLearning for iOS Simulator
+    runs-on: macos-15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set Default Scheme
+        uses: actions/checkout@v5
+
+      - name: Show Xcode Version
         run: |
-          scheme_list=$(xcodebuild -list -json | tr -d "\n")
-          default=$(echo $scheme_list | ruby -e "require 'json'; puts JSON.parse(STDIN.gets)['project']['targets'][0]")
-          echo $default | cat >default
-          echo Using default scheme: $default
-      - name: Build
-        env:
-          scheme: ${{ 'default' }}
+          set -euo pipefail
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Validate Project
         run: |
-          if [ $scheme = default ]; then scheme=$(cat default); fi
-          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then filetype_parameter="workspace" && file_to_build="`ls -A | grep -i \\.xcworkspace\$`"; else filetype_parameter="project" && file_to_build="`ls -A | grep -i \\.xcodeproj\$`"; fi
-          file_to_build=`echo $file_to_build | awk '{$1=$1;print}'`
-          xcodebuild clean build analyze -scheme "$scheme" -"$filetype_parameter" "$file_to_build" | xcpretty && exit ${PIPESTATUS[0]}
+          set -euo pipefail
+
+          test -d KidsPetLearning.xcodeproj
+
+          xcodebuild \
+            -project KidsPetLearning.xcodeproj \
+            -scheme KidsPetLearning \
+            -list
+
+      - name: Show iOS Simulator Destinations
+        run: |
+          set -euo pipefail
+
+          xcodebuild \
+            -project KidsPetLearning.xcodeproj \
+            -scheme KidsPetLearning \
+            -sdk iphonesimulator \
+            -showdestinations || true
+
+      - name: Build iOS Simulator
+        run: |
+          set -o pipefail
+
+          DERIVED_DATA="$RUNNER_TEMP/PetLingoDerivedData"
+          LOG_DIR="$RUNNER_TEMP/PetLingoLogs"
+
+          rm -rf "$DERIVED_DATA"
+          mkdir -p "$LOG_DIR"
+
+          xcodebuild \
+            -project KidsPetLearning.xcodeproj \
+            -scheme KidsPetLearning \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            SUPPORTS_MACCATALYST=NO \
+            SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD=NO \
+            clean build \
+            2>&1 | tee "$LOG_DIR/xcodebuild.log"
+
+      - name: Print Xcode Errors
+        if: failure()
+        run: |
+          echo "================ XCODE ERRORS ================"
+
+          if [ -f "$RUNNER_TEMP/PetLingoLogs/xcodebuild.log" ]; then
+            grep -nE \
+              'error:|fatal error:|BUILD FAILED|The following build commands failed' \
+              "$RUNNER_TEMP/PetLingoLogs/xcodebuild.log" || true
+          else
+            echo "xcodebuild.log not found."
+          fi
+
+          echo "=============================================="
+
+      - name: Verify App
+        if: success()
+        run: |
+          set -euo pipefail
+
+          APP="$RUNNER_TEMP/PetLingoDerivedData/Build/Products/Debug-iphonesimulator/KidsPetLearning.app"
+
+          test -d "$APP"
+
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+          echo "App found:"
+          du -sh "$APP"
+
+      - name: Package Simulator App
+        if: success()
+        run: |
+          set -euo pipefail
+
+          ditto \
+            -c \
+            -k \
+            --sequesterRsrc \
+            --keepParent \
+            "$APP" \
+            PetLingoKids-iOS-Simulator.zip
+
+      - name: Upload Simulator App
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PetLingoKids-iOS-Simulator
+          path: PetLingoKids-iOS-Simulator.zip
+          if-no-files-found: error
+
+      - name: Upload Xcode Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PetLingoKids-XcodeLog
+          path: ${{ runner.temp }}/PetLingoLogs/xcodebuild.log
+          if-no-files-found: warn
