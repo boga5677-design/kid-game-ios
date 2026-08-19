@@ -1,0 +1,138 @@
+name: PetLingo Kids iPhone iPad Device IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-device-ipa:
+    name: Build iPhone/iPad Device IPA
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Show Xcode Version
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Validate Project
+        run: |
+          set -euo pipefail
+          test -d KidsPetLearning.xcodeproj
+          test -f KidsPetLearning.xcodeproj/xcshareddata/xcschemes/KidsPetLearning.xcscheme
+
+          xcodebuild \
+            -project KidsPetLearning.xcodeproj \
+            -scheme KidsPetLearning \
+            -list
+
+      - name: Build Real iPhone/iPad App
+        run: |
+          set -o pipefail
+
+          DERIVED_DATA="$RUNNER_TEMP/PetLingoDeviceDerivedData"
+          LOG_DIR="$RUNNER_TEMP/PetLingoLogs"
+
+          rm -rf "$DERIVED_DATA"
+          mkdir -p "$LOG_DIR"
+
+          xcodebuild \
+            -project KidsPetLearning.xcodeproj \
+            -scheme KidsPetLearning \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            SUPPORTS_MACCATALYST=NO \
+            SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD=NO \
+            clean build \
+            2>&1 | tee "$LOG_DIR/xcodebuild-device.log"
+
+      - name: Verify Device Build
+        run: |
+          set -euo pipefail
+
+          APP="$RUNNER_TEMP/PetLingoDeviceDerivedData/Build/Products/Release-iphoneos/KidsPetLearning.app"
+
+          if [ ! -d "$APP" ]; then
+            echo "::error::Release-iphoneos app not found."
+            exit 1
+          fi
+
+          PLATFORM=$(/usr/libexec/PlistBuddy -c "Print :DTPlatformName" "$APP/Info.plist")
+          SUPPORTED=$(/usr/libexec/PlistBuddy -c "Print :CFBundleSupportedPlatforms:0" "$APP/Info.plist")
+
+          echo "DTPlatformName=$PLATFORM"
+          echo "CFBundleSupportedPlatforms=$SUPPORTED"
+
+          if [ "$PLATFORM" != "iphoneos" ]; then
+            echo "::error::This is not an iphoneos device build."
+            exit 1
+          fi
+
+          if [ "$SUPPORTED" != "iPhoneOS" ]; then
+            echo "::error::This app does not target real iPhone/iPad devices."
+            exit 1
+          fi
+
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+      - name: Package Device IPA
+        run: |
+          set -euo pipefail
+
+          PACKAGE_DIR="$RUNNER_TEMP/PetLingoDeviceIPA"
+          rm -rf "$PACKAGE_DIR"
+          mkdir -p "$PACKAGE_DIR/Payload"
+
+          cp -R "$APP" "$PACKAGE_DIR/Payload/KidsPetLearning.app"
+
+          (
+            cd "$PACKAGE_DIR"
+            /usr/bin/zip -qry PetLingoKids-iOS-v1.0.5-Device-Unsigned.ipa Payload
+          )
+
+          test -f "$PACKAGE_DIR/PetLingoKids-iOS-v1.0.5-Device-Unsigned.ipa"
+
+          echo "Device IPA:"
+          ls -lh "$PACKAGE_DIR/PetLingoKids-iOS-v1.0.5-Device-Unsigned.ipa"
+
+      - name: Print Build Errors
+        if: failure()
+        run: |
+          if [ -f "$RUNNER_TEMP/PetLingoLogs/xcodebuild-device.log" ]; then
+            echo "================ XCODE ERRORS ================"
+            grep -nE \
+              'error:|fatal error:|BUILD FAILED|The following build commands failed' \
+              "$RUNNER_TEMP/PetLingoLogs/xcodebuild-device.log" || true
+            echo "=============================================="
+          fi
+
+      - name: Upload Device IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PetLingoKids-iOS-Device-IPA
+          path: ${{ runner.temp }}/PetLingoDeviceIPA/PetLingoKids-iOS-v1.0.5-Device-Unsigned.ipa
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload Failure Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PetLingoKids-iOS-Build-Log
+          path: ${{ runner.temp }}/PetLingoLogs/xcodebuild-device.log
+          if-no-files-found: warn
