@@ -1,40 +1,25 @@
-# PetLingo Kids iOS v1.0.3
+# PetLingo Kids iOS v1.0.4
 
-這版已從 Simulator `.app` 工作流程改為 **真正 iPhone / iPad 實機 IPA 工作流程**。
+本版直接修正目前 Repository 仍在產生 Simulator App 的問題。
 
-## 成功後只產生一個 Artifact
+## 版本
+- iOS 15.0+
+- iPhone + iPad / iPad mini
+- Version 1.0.4
+- Build 5
+
+## GitHub Actions
+成功成品：
 
 `PetLingoKids-iOS-Installable-IPA`
 
-解壓後：
+內容：
 
-`PetLingoKids-iOS-v1.0.3.ipa`
+`PetLingoKids-iOS-v1.0.4.ipa`
 
-建置失敗時才另外產生：
+不再產生 `PetLingoKids-iOS-Simulator`。
 
-`PetLingoKids-iOS-Signing-Logs`
-
-## 重要
-
-可安裝 iOS App 必須有 Apple code signing。
-
-請先依：
+## 必要 Apple 簽章
+請閱讀：
 
 `APPLE-SIGNING-SETUP.md`
-
-建立這 3 個 GitHub Repository Secrets：
-
-- `IOS_P12_BASE64`
-- `IOS_P12_PASSWORD`
-- `IOS_MOBILEPROVISION_BASE64`
-
-Workflow 會自動從 Profile / Certificate 判斷其餘簽章資訊。
-
-## App
-
-- iOS 15.0+
-- iPhone + iPad / iPad mini
-- version 1.0.3
-- build 4
-- Release `iphoneos`
-- Signed `.ipa`
